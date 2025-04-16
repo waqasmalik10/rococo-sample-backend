@@ -65,7 +65,7 @@ class AuthService:
         organization = self.organization_service.save_organization(organization)
         person_organization_role = self.person_organization_role_service.save_person_organization_role(person_organization_role)
 
-        self.send_welcome_email(login_method, person, email.email)
+        self.send_verification_email(login_method, person, email.email)
 
 
     def generate_reset_password_token(self, login_method: LoginMethod, email: str):
@@ -90,19 +90,27 @@ class AuthService:
         return password_reset_url
 
 
-    def send_welcome_email(self, login_method: LoginMethod, person: Person, email: str):
-        if confirmation_link := self.prepare_password_reset_url(login_method, email):
-            message = {
-                "event": "WELCOME_EMAIL",
-                "data": {
-                    "confirmation_link": confirmation_link,
-                    "recipient_name": f"{person.first_name} {person.last_name}".strip(),
-                },
-                "to_emails": [email],
-            }
-            logger.info("confirmation_link")
-            logger.info(confirmation_link)
-            self.message_sender.send_message(self.EMAIL_TRANSMITTER_QUEUE_NAME, message)
+    def send_verification_email(self, login_method: LoginMethod, person: Person, email: str):
+        try:
+            if verify_link := self.prepare_password_reset_url(login_method, email):
+                message = {
+                    "event": "VERIFY_EMAIL",
+                    "data": {
+                        "verify_link": verify_link,
+                        "recipient_name": f"{person.first_name} {person.last_name}".strip(),
+                    },
+                    "to_emails": [email],
+                }
+                logger.info(f"Sending verification email to {email}")
+                logger.debug(f"Verification link: {verify_link}")
+                self.message_sender.send_message(self.EMAIL_TRANSMITTER_QUEUE_NAME, message)
+                logger.info(f"Verification email sent successfully to {email}")
+            else:
+                logger.error(f"Failed to generate verification link for {email}")
+                raise APIException("Failed to generate verification link")
+        except Exception as e:
+            logger.error(f"Error sending verification email to {email}: {str(e)}")
+            raise APIException("Failed to send verification email")
 
     def login_user_by_email_password(self, email: str, password: str):
         email_obj = self.email_service.get_email_by_email_address(email)
@@ -110,6 +118,7 @@ class AuthService:
             raise InputValidationError("Email is not registered.")
         
         login_method = self.login_method_service.get_login_method_by_email_id(email_obj.entity_id)
+
         if not check_password_hash(login_method.password, password):
             raise InputValidationError('Incorrect email or password.')
         
@@ -162,7 +171,7 @@ class AuthService:
         if not person:
             raise APIException("Person does not exist.")
 
-        login_method = self.login_method_service.get_login_method_by_email_id(email.entity_id)
+        login_method = self.login_method_service.get_login_method_by_email_id(email_obj.entity_id)
         if not login_method:
             raise APIException("Login method does not exist.")
 
@@ -174,8 +183,7 @@ class AuthService:
             message = {
                 "event": "RESET_PASSWORD",
                 "data": {
-                    "reset_password_link": password_reset_url
-                },
+                    "verify_link": password_reset_url                },
                 "to_emails": [email],
             }
             self.message_sender.send_message(self.EMAIL_TRANSMITTER_QUEUE_NAME, message)

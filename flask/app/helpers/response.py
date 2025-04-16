@@ -15,6 +15,11 @@ def validate_required_fields(required_fields):
         if not value or not str(value).strip():
             raise InputValidationError(f"'{field}' is required and cannot be empty.")
 
+def validate_required_fields_from_list(fields_dict, required_fields_list):
+    for field in required_fields_list:
+        if field not in fields_dict or not fields_dict[field] or not str(fields_dict[field]).strip():
+            raise InputValidationError(f"'{field}' is required and cannot be empty.")
+
 
 def _get_response(data, status_code=200):
     response = app.response_class(
